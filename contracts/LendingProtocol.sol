@@ -16,7 +16,7 @@ contract LendingProtocol is ReentrancyGuard {
     uint256 public constant LIQUIDATION_BONUS = 10;
     uint256 public constant LTV = 50;
     uint256 public borrowRate = 5;
-    uint256 public constant FLASH_LOAN_FEE_BPS = 10;
+    // uint256 public constant FLASH_LOAN_FEE_BPS = 10;
 
     mapping(address => uint256) public lastBorrowTime;
     mapping(address => uint256) public collateral;
@@ -148,20 +148,20 @@ contract LendingProtocol is ReentrancyGuard {
         emit Liquidated(msg.sender, user, repayAmount, collateralToSeize);
     }
 
-    function flashLoan(address receiver, uint256 amount) external nonReentrant {
-        require(amount > 0, "Zero amount");
+    // function flashLoan(address receiver, uint256 amount) external nonReentrant {
+    //     require(amount > 0, "Zero amount");
 
-        uint256 balanceBefore = borrowToken.balanceOf(address(this));
-        require(balanceBefore >= amount, "Insufficient liquidity");
+    //     uint256 balanceBefore = borrowToken.balanceOf(address(this));
+    //     require(balanceBefore >= amount, "Insufficient liquidity");
 
-        uint256 fee = (amount * FLASH_LOAN_FEE_BPS) / 10000;
-        borrowToken.transfer(receiver, amount);
+    //     uint256 fee = (amount * FLASH_LOAN_FEE_BPS) / 10000;
+    //     borrowToken.transfer(receiver, amount);
 
-        IFlashLoanReceiver(receiver).executeOperation(amount, fee);
+    //     IFlashLoanReceiver(receiver).executeOperation(amount, fee);
 
-        uint256 balanceAfter = borrowToken.balanceOf(address(this));
-        require(balanceAfter >= balanceBefore + fee, "Flash loan not repaid");
-    }
+    //     uint256 balanceAfter = borrowToken.balanceOf(address(this));
+    //     require(balanceAfter >= balanceBefore + fee, "Flash loan not repaid");
+    // }
 
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
