@@ -14,16 +14,16 @@ async function main() {
         "0xDe3ba8Da809ec0360Fa042467F6C0BD0927519E8"
     );
 
-    // ✅ Approve first
+    // Approve first
     await usdt.approve(
         await lending.getAddress(),
         ethers.parseEther("1000")
     );
-    console.log("Approved ✅");
+    console.log("Approved ");
 
-    // ✅ Then deposit
+    //  Then deposit
     await lending.depositCollateral(ethers.parseEther("1000"));
-    console.log("Deposited 1000 USDT ✅");
+    console.log("Deposited 1000 USDT ");
 
     const collateral = await lending.collateral(owner.address);
     console.log("Collateral:", ethers.formatEther(collateral), "USDT");

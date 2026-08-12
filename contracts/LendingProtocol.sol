@@ -5,8 +5,10 @@ import "./Interfacelending.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract LendingProtocol is ReentrancyGuard {
+    using SafeERC20 for IERC20;
     IERC20 public collateralToken;
     IERC20 public borrowToken;
 
@@ -16,11 +18,38 @@ contract LendingProtocol is ReentrancyGuard {
     uint256 public constant LIQUIDATION_BONUS = 10;
     uint256 public constant LTV = 50;
     uint256 public borrowRate = 5;
-    // uint256 public constant FLASH_LOAN_FEE_BPS = 10;
+     uint256 public constant FLASH_LOAN_FEE_BPS = 10;
+     uint256 public constant LIQUIDATION_THRESHOLD = 80;
+     
+
+
+
+     //events
+    event Deposited(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event Borrowed(address indexed user, uint256 amount);
+    event Repaid(address indexed user, uint256 amount);
+    event Liquidated(
+        address indexed liquidator,
+        address indexed user,
+        uint256 debtRepaid,
+        uint256 collateralSeized
+    );
+    event RescuedTokens(
+    address indexed token,
+    address indexed to,
+    uint256 amount
+);
+event FlashLoan(
+    address indexed receiver,
+    uint256 amount,
+    uint256 fee
+);
 
     mapping(address => uint256) public lastBorrowTime;
     mapping(address => uint256) public collateral;
     mapping(address => uint256) public debt;
+    address public owner;
 
     constructor(
         address _collateralToken,
@@ -28,12 +57,19 @@ contract LendingProtocol is ReentrancyGuard {
         address _collateralPriceFeed,
         address _borrowPriceFeed
     ) {
+        owner = msg.sender;
         collateralToken = IERC20(_collateralToken);
         borrowToken = IERC20(_borrowToken);
         collateralPriceFeed = AggregatorV3Interface(_collateralPriceFeed);
         borrowPriceFeed = AggregatorV3Interface(_borrowPriceFeed);
     }
 
+
+    modifier onlyOwner() {
+    require(msg.sender == owner, "Not owner");
+    _;
+}
+//functions
     function _getPrice(AggregatorV3Interface feed) internal view returns (uint256) {
         (
             uint80 roundId,
@@ -121,10 +157,23 @@ contract LendingProtocol is ReentrancyGuard {
         emit Withdrawn(msg.sender, amount);
     }
 
-    function isLiquidatable(address user) public view returns (bool) {
-        uint256 maxBorrowUSD = (getCollateralValueUSD(user) * LTV) / 100;
-        return getDebtValueUSD(user) > maxBorrowUSD;
+   function isLiquidatable(address user) public view returns (bool) {
+    return getHealthFactor(user) < 1e18;
+}
+    function getHealthFactor(address user) public view returns (uint256) {
+    uint256 debtUSD = getDebtValueUSD(user);
+
+    
+    if (debtUSD == 0) {
+        return type(uint256).max;
     }
+
+    uint256 collateralUSD = getCollateralValueUSD(user);
+
+    return
+        (collateralUSD * LIQUIDATION_THRESHOLD * 1e18) /
+        (100 * debtUSD);
+}
 
     function liquidate(address user, uint256 repayAmount) external {
         require(isLiquidatable(user), "Position healthy");
@@ -148,29 +197,45 @@ contract LendingProtocol is ReentrancyGuard {
         emit Liquidated(msg.sender, user, repayAmount, collateralToSeize);
     }
 
-    // function flashLoan(address receiver, uint256 amount) external nonReentrant {
-    //     require(amount > 0, "Zero amount");
+    function accrueInterest(address user) internal {
+    if (debt[user] == 0) {
+        lastBorrowTime[user] = block.timestamp;
+        return;
+    }
 
-    //     uint256 balanceBefore = borrowToken.balanceOf(address(this));
-    //     require(balanceBefore >= amount, "Insufficient liquidity");
+    uint256 elapsed = block.timestamp - lastBorrowTime[user];
 
-    //     uint256 fee = (amount * FLASH_LOAN_FEE_BPS) / 10000;
-    //     borrowToken.transfer(receiver, amount);
+    uint256 interest =
+        (debt[user] * borrowRate * elapsed) /
+        (365 days * 100);
 
-    //     IFlashLoanReceiver(receiver).executeOperation(amount, fee);
+    debt[user] += interest;
 
-    //     uint256 balanceAfter = borrowToken.balanceOf(address(this));
-    //     require(balanceAfter >= balanceBefore + fee, "Flash loan not repaid");
-    // }
+    lastBorrowTime[user] = block.timestamp;
+}
 
-    event Deposited(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
-    event Borrowed(address indexed user, uint256 amount);
-    event Repaid(address indexed user, uint256 amount);
-    event Liquidated(
-        address indexed liquidator,
-        address indexed user,
-        uint256 debtRepaid,
-        uint256 collateralSeized
-    );
+     function flashLoan(address receiver, uint256 amount) external nonReentrant {
+        require(amount > 0, "Zero amount");
+
+        uint256 balanceBefore = borrowToken.balanceOf(address(this));
+        require(balanceBefore >= amount, "Insufficient liquidity");
+
+        uint256 fee = (amount * FLASH_LOAN_FEE_BPS) / 10000;
+        borrowToken.transfer(receiver, amount);
+
+        IFlashLoanReceiver(receiver).executeOperation(amount, fee);
+
+        uint256 balanceAfter = borrowToken.balanceOf(address(this));
+         require(balanceAfter >= balanceBefore + fee, "Flash loan not repaid");
+     }
+
+  
+
+
+    function RescueTokens(address token,address to, uint256 amount)external onlyOwner{
+        require(to != address(0),"invalid adddress");
+        SafeERC20.safeTransfer(IERC20(token), to, amount);
+        emit RescuedTokens(token, to, amount);
+    }
+
 }
